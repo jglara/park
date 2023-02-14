@@ -82,3 +82,7 @@ register(
     entry_point='park.envs.multi_dim_index:MultiDimIndexEnv'
 )
 
+register(
+    env_id='mpquic',
+    entry_point='park.envs.mpquic:MultipathQuicEnv'
+)
