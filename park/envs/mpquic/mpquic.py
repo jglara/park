@@ -118,9 +118,10 @@ class QuicheQuic:
         self.file_path = "test.bin"
         self.file_size = file_size
         self.output_dir = output_dir
+        self.net = net
+        self.loglevel = 'info'
 
     def prepare(self):
-        super(QuicheQuic, self).prepare()
         self.net.getNodeByName('s1').cmd("truncate -s {size} {path}".format(
             size= self.file_size, 
             path= self.file_path))
@@ -149,7 +150,6 @@ class QuicheQuic:
         return cmd
 
     def clean(self):    
-        super(QuicheQuic, self).clean()
         self.net.getNodeByName('s1').cmd("rm {path}".format(
             path= self.file_path))
         
@@ -215,7 +215,7 @@ class MultipathQuicEnv(core.SysEnv):
     def reset(self):
         logger.info("Start download")
 
-        exp = QuicheQuic(file_size='1M', output_dir=self.output_dir)
+        exp = QuicheQuic(file_size='1M', net=self.net, output_dir=self.output_dir)
         exp.prepare()
         exp.run()
         exp.clean()
