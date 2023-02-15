@@ -2,7 +2,6 @@ import park
 from park import core, spaces, logger
 from park.param import config
 from park.utils import seeding
-from park.utils.colorful_print import print_red
 from park.spaces.box import Box
 from park.spaces.discrete import Discrete
 
@@ -30,20 +29,42 @@ capnp.remove_import_hook()
 mpquic_capnp = capnp.load(park.__path__[0] + "/envs/mpquic/mpquic-quiche/src/data.capnp")
 
 class SchedulerImpl(mpquic_capnp.Scheduler.Server):
-    def __init__(self):
+    def __init__(self, agent):
         self.rtts = []
+        self.agent = agent
+
+    def reward(self, obs):
+        # TODO: define reward and info
+        return (0.0, None)
 
     def nextPath(self, d, _context, **kwargs):
-        logger.info("d.best_rtt = {} d.second_rtt = {}".format(d.bestRtt, d.secondRtt))
+        #logger.info("d.best_rtt = {} d.second_rtt = {}".format(d.bestRtt, d.secondRtt))
         self.rtts.append((d.bestRtt, d.secondRtt))
-        return 0
 
-def run_forever():    
-    addr=("*:6677")
+        obs = [ d.bestRtt, d.secondRtt]
+        reward, info = self.reward(obs)
+
+        act = self.agent.get_action(obs, reward, False, info)
+        return act
+
+def run_forever(addr, agent):    
     logger.info("Starting communication with MPQUIC server")
-    server = capnp.TwoPartyServer(addr, bootstrap=SchedulerImpl())
+    server = capnp.TwoPartyServer(addr, bootstrap=SchedulerImpl(agent))
     server.run_forever()
 
+
+class ProxyAgent(object):
+    def __init__(self):
+        self.agent = None
+
+    def set_agent(self, agent):
+        self.agent = agent
+
+    def get_action(self, *args):        
+        assert(self.agent != None)
+        return self.agent.get_action(*args)
+
+proxy_agent = ProxyAgent()
 
 class MyTCLink( Link ):
     "Link with symmetric TC interfaces configured via opts"
@@ -204,14 +225,17 @@ class MultipathQuicEnv(core.SysEnv):
         self.net = Mininet(self.topo, switch=OVSBridge, controller=None)
         self.net.start()
 
-    def run(self, agent):
-        logger.info("Setup agent")
-
-
         # start rpc server                 
-        t = threading.Thread(target=run_forever)
+        global proxy_agent
+        t = threading.Thread(target=run_forever, args=("*:6677", proxy_agent))
         t.daemon = True
         t.start()
+
+
+    def run(self, agent):
+        logger.info("Setup agent")
+        global proxy_agent
+        proxy_agent.set_agent(agent)
 
         # Start
         self.reset()
