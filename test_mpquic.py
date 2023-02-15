@@ -7,10 +7,10 @@ class RandomAgent(object):
         self.action_space = action_space
 
     def get_action(self, obs, prev_reward, prev_done, prev_info):
-        #act = self.action_space.sample()
+        act = self.action_space.sample()
         #print_red(f"get_action {obs} {prev_reward} {prev_done} {prev_info}")
         # implement real action logic here
-        return 0
+        return act
 
 def main():
     env = park.make('mpquic')
