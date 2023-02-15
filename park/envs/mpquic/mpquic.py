@@ -22,21 +22,25 @@ from mininet.log import setLogLevel, info, debug
 from mininet.clean import cleanup
 import threading
 
+
+
+
 import capnp
 capnp.remove_import_hook()
-point_capnp = capnp.load("/home/ejogarv/DEV/mpquic-rl/mpquic-quiche/src/data.capnp")
+mpquic_capnp = capnp.load(park.__path__[0] + "/envs/mpquic/mpquic-quiche/src/data.capnp")
 
-class SchedulerImpl(point_capnp.Scheduler.Server):
+class SchedulerImpl(mpquic_capnp.Scheduler.Server):
     def __init__(self):
         self.rtts = []
 
     def nextPath(self, d, _context, **kwargs):
-        #print("d.best_rtt = {} d.second_rtt = {}".format(d.bestRtt, d.secondRtt))
+        logger.info("d.best_rtt = {} d.second_rtt = {}".format(d.bestRtt, d.secondRtt))
         self.rtts.append((d.bestRtt, d.secondRtt))
         return 0
 
 def run_forever():    
     addr=("*:6677")
+    logger.info("Starting communication with MPQUIC server")
     server = capnp.TwoPartyServer(addr, bootstrap=SchedulerImpl())
     server.run_forever()
 
@@ -112,7 +116,7 @@ class MultipathTopo( Topo ):
 
 class QuicheQuic:
     NAME = "quichequic"    
-    QUICHEPATH = "/home/ejogarv/DEV/mpquic-rl/mpquic-quiche"
+    QUICHEPATH = park.__path__[0] + "/envs/mpquic/mpquic-quiche"
     
     def __init__(self, net, file_size, output_dir):
         self.file_path = "test.bin"
@@ -134,7 +138,7 @@ class QuicheQuic:
             wwwpath='./',
             loglevel=self.loglevel)
 
-        print(cmd)
+        logger.info(cmd)
         return cmd
 
     def get_client_cmd(self):
@@ -146,7 +150,7 @@ class QuicheQuic:
             loglevel=self.loglevel
             )
         
-        print(cmd)
+        logger.info(cmd)
         return cmd
 
     def clean(self):    
@@ -181,7 +185,7 @@ class MultipathQuicEnv(core.SysEnv):
         #   3 send both
         self.action_space = Discrete(4) 
 
-        self.output_dir = "/tmp/mpquic"
+        self.output_dir = park.__path__[0] + "/../test_mpquic"
         self.topo_params = {
             'lte' : {
                 "bw": 8.6,
@@ -215,10 +219,13 @@ class MultipathQuicEnv(core.SysEnv):
     def reset(self):
         logger.info("Start download")
 
+        # run experiment
         exp = QuicheQuic(file_size='1M', net=self.net, output_dir=self.output_dir)
         exp.prepare()
         exp.run()
         exp.clean()
 
-        # run experiment
+        cleanup()
+
+
         

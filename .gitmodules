@@ -1,3 +1,7 @@
 [submodule "park/envs/abr/local-unix-proxy"]
 	path = park/envs/abr/local-unix-proxy
 	url = https://github.com/akshayknarayan/local-unix-proxy
+[submodule "park/envs/mpquic/quiche"]
+	path = park/envs/mpquic/quiche
+	url = https://github.com/jglara/quiche.git
+	branch = multipath
