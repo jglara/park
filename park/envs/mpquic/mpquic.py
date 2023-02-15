@@ -132,7 +132,7 @@ class QuicheQuic:
         
     def get_server_cmd(self):
         #QLOGDIR={csv_path} 
-        cmd="RUST_LOG={loglevel} {quichepath}/target/debug/mp_server --listen 10.0.3.10:4433 --cert {quichepath}/src/bin/cert.crt --key {quichepath}/src/bin/cert.key --root {wwwpath} --scheduler rl --path-stats-output {output}/path.csv --conn-stats-output {output}/conn.csv --sched-stats-output {output}/rl.csv > {output}/server.log&".format(            
+        cmd="RUST_LOG={loglevel} {quichepath}/target/debug/mp_server --listen 10.0.3.10:4433 --cert {quichepath}/src/bin/cert.crt --key {quichepath}/src/bin/cert.key --root {wwwpath} --scheduler rl > {output}/server.log&".format(            
             output=self.output_dir,            
             quichepath=self.QUICHEPATH, 
             wwwpath='./',
@@ -143,7 +143,7 @@ class QuicheQuic:
 
     def get_client_cmd(self):
 
-        cmd="RUST_LOG={loglevel} {quichepath}/target/debug/mp_client -l 10.0.1.1:5555 -w 10.0.2.1:6666 --url https://10.0.3.10:4433/{file} --download-stats-output {output}/download.csv --path-stats-output {output}/client.csv > {output}/client.log".format(            
+        cmd="RUST_LOG={loglevel} {quichepath}/target/debug/mp_client -l 10.0.1.1:5555 -w 10.0.2.1:6666 --url https://10.0.3.10:4433/{file} > {output}/client.log".format(            
             output=self.output_dir,        
             quichepath=self.QUICHEPATH, 
             file=self.file_path,

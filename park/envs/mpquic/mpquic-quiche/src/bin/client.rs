@@ -22,32 +22,8 @@ struct ClientCli {
     url: String, // resource
 
     #[clap(value_parser, long, short)]
-    download_stats_output: String, // File to output download stats
-
-    #[clap(value_parser, long, short)]
-    path_stats_output: String, // File to output client stats
-
-    #[clap(value_parser, long, short)]
     max_stream_data: Option<u64>, // Initial max stream data
    
-}
-
-
-#[derive(Debug, serde::Serialize)]
-struct DownloadStats {
-    recv_bytes: u64,
-    elapsed: u128,
-}
-
-#[derive(Debug, serde::Serialize)]
-
-struct PathStatsRecord<'a> {
-    elapsed: u128,
-    local: &'a SocketAddr,
-    remote: &'a SocketAddr,
-    recv_bytes: usize,
-    off_front: u64,
-    max_off: u64,
 }
 
 
@@ -60,9 +36,6 @@ fn main() {
 
     env_logger::init();
     let cli = ClientCli::parse();
-
-    let mut stats_wrt = csv::Writer::from_path(cli.download_stats_output).unwrap();
-    let mut path_stats_wrt = csv::Writer::from_path(cli.path_stats_output).unwrap();
 
     let mut buf = [0; 65535];
     let mut out = [0; MAX_DATAGRAM_SIZE];
@@ -268,15 +241,7 @@ fn main() {
                     off_front = off_front_;
                 }
 
-                path_stats_wrt.serialize(PathStatsRecord {
-                    elapsed: req_start.elapsed().as_millis(),
-                    local: &recv_info.to,
-                    remote: &recv_info.from,
-                    recv_bytes: read,
-                    off_front: off_front,
-                    max_off: max_off,
-                }).unwrap();
-
+                
                 debug!("{} processed {} bytes", local_addr, read);
             }
         }
@@ -325,12 +290,7 @@ fn main() {
                         "{:?} bytes received in {:?}, closing...", conn.stats().recv_bytes,
                         req_start.elapsed()
                     );
-                    stats_wrt.serialize(
-                        DownloadStats {
-                            recv_bytes: conn.stats().recv_bytes, 
-                            elapsed: req_start.elapsed().as_millis(),
-                    }).unwrap();
-
+                    
                     conn.close(true, 0x00, b"kthxbye").unwrap();
                 }
             }

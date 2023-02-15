@@ -40,15 +40,6 @@ struct ServerCli {
 
     #[clap(value_parser, long, short)]
     scheduler: String, // Type of scheduler
-
-    #[clap(value_parser, long, short)]
-    path_stats_output: String, // File to output path stats
-
-    #[clap(value_parser, long)]
-    conn_stats_output: String, // File to output conn stats
-
-    #[clap(value_parser, long)]
-    sched_stats_output: String, // File to output scheduler stats
 }
 
 const MAX_BUF_SIZE: usize = 65507;
@@ -65,55 +56,6 @@ struct Client {
     max_send_burst: usize,
 }
 
-#[derive(Debug, serde::Serialize)]
-struct PathStatsRecord<'a> {
-    elapsed: u128,
-    local: &'a SocketAddr,
-    remote: &'a SocketAddr,
-    sent_bytes: u64,
-    recv_bytes: u64,
-    cwnd: usize,
-    bif: usize,
-    rtt: u128,
-    rttvar: u128,
-    quantum: usize,
-}
-
-#[derive(Debug, serde::Serialize)]
-struct ConnStatsRecord<'a> {
-    elapsed: u128,
-    trace_id: &'a str,
-    max_send_burst: usize,
-    sent_bytes: usize,
-    sent_bytes_total: u64,
-    lost_bytes_total: u64,
-    retrans_bytes_total: u64,
-    tx_cap: usize,
-    max_tx_data: u64,
-    stream_written: usize,
-    pending: usize,
-    max_off: u64,
-    off_back: u64,
-}
-
-#[derive(Debug, serde::Serialize)]
-struct ECFSchedulerStats {
-    elapsed: u128,
-    count: usize,
-    waiting: bool,
-    best_path_cwnd: usize,
-    second_path_cwnd: usize,
-    best_path_rtt: usize,
-    second_path_rtt: usize,
-    best_path_blocked: bool,
-    send_on_second_path: bool,
-    term1: usize,
-    term2: usize,
-    term3: usize,
-    term4: usize,
-    best_path_peer_addr: u16,
-    second_path_peer_addr: u16,
-}
 
 
 trait Scheduler {
@@ -165,143 +107,6 @@ impl Scheduler for MinRttScheduler {
     }
 }
 
-
-
-struct ECFScheduler {
-    waiting: bool,
-    wrt: csv::Writer<std::fs::File>,
-    server_start: std::time::Instant,
-}
-
-impl Scheduler for ECFScheduler {
-    fn start(&mut self, conn: &quiche::Connection) {
-        // calculate bestpath and secondpath with cwd,rtt,rttvar 
-        //conn.path_stats().for_each(|p| debug!("{:?} -> {:?}: cwd: {} srtt: {:?} rttvar: {:?} q: {}", p.local_addr, p.peer_addr, p.cwnd, p.rtt, p.rttvar, conn.send_quantum_on_path(p.local_addr, p.peer_addr)));
-        //conn.writable().filter_map(|id| conn.stream_send_offset(id).ok()).for_each(|(max_off, off_back)| debug!("Pending to send: {}", max_off - off_back));
-
-      /*  self.wrt.serialize(ECFSchedulerStats {
-            elapsed: self.server_start.elapsed().as_millis(),
-            count: 0,
-            waiting: self.waiting,
-            best_path_blocked: false,
-            send_on_second_path: false,
-            term1: 0,
-            term2: 0,
-            term3: 0,
-            term4: 0,
-            best_path_rtt: 0,
-            second_path_rtt: 0,
-            best_path_cwnd: 0,
-            second_path_cwnd: 0,
-    }
-    ).unwrap();*/
-        
-    }
-
-    fn next_path(&mut self, conn: &quiche::Connection) -> Option<(std::net::SocketAddr, std::net::SocketAddr)> {
-        // select bestpath, secondpath or nothing if waiting for bestpath is better
-
-        let count = conn.path_stats().count();
-        let mut best_path_blocked = false;
-        let mut send_on_second_path = false;
-        let mut term1 = 0;
-        let mut term2 = 0;
-        let mut term3 = 0;
-        let mut term4 = 0;
-        let mut best_rtt = 0;
-        let mut second_rtt = 0;
-        let mut best_path_cwnd =0;
-        let mut second_path_cwnd = 0;
-        let mut best_path_peer_addr= 0;
-        let mut second_path_peer_addr= 0;
-
-
-        let path = if let Some(p) = conn.path_stats().find(|p|p.sent < 3) {
-            Some((p.local_addr, p.peer_addr))
-        } else {
-            let best_path = conn.path_stats().filter(|p| p.active).min_by(|p1, p2| p1.rtt.cmp(&p2.rtt) ).unwrap();
-            let second_path = conn.path_stats().filter(|p| p.active).max_by(|p1, p2| p1.rtt.cmp(&p2.rtt) ).unwrap();
-            best_path_peer_addr = best_path.peer_addr.port();
-            second_path_peer_addr = second_path.peer_addr.port();
-
-            let send_bytes: usize = conn.writable().filter_map(|id| conn.stream_send_offset(id).ok()).map(|(max_off, off_back)| max_off - off_back).sum::<u64>() as usize;
-            let send_bytes_best = if send_bytes < best_path.cwnd {best_path.cwnd} else {send_bytes};
-            let send_bytes_second = if send_bytes < second_path.cwnd {second_path.cwnd} else {send_bytes};
-  
-            let maxrttvar = std::cmp::max(best_path.rttvar.as_millis(), second_path.rttvar.as_millis()) as usize;
-            best_rtt = best_path.rtt.as_millis() as usize;
-            second_rtt = second_path.rtt.as_millis() as usize;
-            best_path_cwnd = best_path.cwnd;
-            second_path_cwnd = second_path.cwnd;
-
-
-            if best_path.cwnd > best_path.bytes_in_flight {
-                Some((best_path.local_addr, best_path.peer_addr))
-            } else {
-                best_path_blocked = true;
-
-                
-                term1 = 4 * (send_bytes_best + best_path_cwnd) * best_rtt;
-                term2 = best_path_cwnd * (second_rtt + maxrttvar) * if self.waiting {5} else {4};
-
-                if term1 < term2 {
-                    term3 = send_bytes_second * second_rtt;
-                    term4 = second_path_cwnd * ((2 * best_rtt) + maxrttvar) ;
-
-                    if term3 > term4 {
-                        self.waiting = true;
-                        None
-                    } else {
-                        send_on_second_path= true;
-                        Some((second_path.local_addr, second_path.peer_addr))
-                    }
-                } else {
-                    self.waiting = false;
-                    send_on_second_path= true;
-                    Some((second_path.local_addr, second_path.peer_addr))
-                }
-            }
-        };
-
-        self.wrt.serialize(ECFSchedulerStats {
-            elapsed: self.server_start.elapsed().as_millis(),
-            count: count,
-            waiting: self.waiting,
-            best_path_blocked: best_path_blocked,
-            send_on_second_path: send_on_second_path,
-            term1: term1,
-            term2: term2,
-            term3: term3,
-            term4: term4,
-            best_path_rtt: best_rtt,
-            second_path_rtt: second_rtt,
-            best_path_cwnd: best_path_cwnd,
-            second_path_cwnd: second_path_cwnd,
-            best_path_peer_addr: best_path_peer_addr,
-            second_path_peer_addr: second_path_peer_addr,
-            }).unwrap();
-
-        path
-
-        
-    }
-}
-
-struct BLESTScheduler {
-
-}
-
-impl Scheduler for BLESTScheduler {
-    fn start(&mut self, conn: &quiche::Connection) {
-        // calculate bestpath and secondpath with cwd,rtt and stream available sendbuffer
-        todo!()
-    }
-
-    fn next_path(&mut self, conn: &quiche::Connection) -> Option<(std::net::SocketAddr, std::net::SocketAddr)> {
-        // select bestpath, secondpath or nothing if waiting for bestpath is better to avoid HoL
-        todo!()
-    }
-}
 
 struct RLScheduler{
     tx: mpsc::Sender<Data>,
@@ -355,8 +160,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut buf = [0; 65535];
     let mut out = [0; MAX_DATAGRAM_SIZE];
 
-    let mut path_stats_wrt = csv::Writer::from_path(cli.path_stats_output).unwrap();
-    let mut conn_stats_wrt = csv::Writer::from_path(cli.conn_stats_output).unwrap();
     let server_start = std::time::Instant::now();
 
     // Create the UDP listening socket, and register it with the event loop.
@@ -416,11 +219,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut sched: Box<dyn Scheduler> = match cli.scheduler.as_str() {
         "rr" => Box::new(RoundRobinScheduler {next: 0}),
         "minRtt" => Box::new(MinRttScheduler {}),
-        "blest" => Box::new(BLESTScheduler {}),
-        "ecf" => Box::new(ECFScheduler {waiting: false, 
-                                        wrt: csv::Writer::from_path(cli.sched_stats_output).unwrap(),
-                                        server_start: server_start,
-                                        }),
         "rl" => Box::new(RLScheduler {rx: rx_m,
                                       tx: tx_m,
         }),
@@ -807,42 +605,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             //info!("Sending over paths: {:?}", scheduled_tuples);
             client.conn.path_stats().for_each(|p| {
-                let (srtt,rttvar) = if p.rtt.as_millis() == 333 {(0,0)} else {(p.rtt.as_millis(), p.rttvar.as_millis())};
-
-                
-                path_stats_wrt.serialize(PathStatsRecord {
-                    elapsed: server_start.elapsed().as_millis(),
-                    local: &p.local_addr, 
-                    remote: &p.peer_addr, 
-                    sent_bytes: p.sent_bytes, 
-                    recv_bytes: p.recv_bytes, 
-                    cwnd: p.cwnd, 
-                    bif: p.bytes_in_flight, 
-                    rtt: srtt,
-                    rttvar: rttvar,
-                    quantum: client.conn.send_quantum_on_path(p.local_addr, p.peer_addr),
-                }).unwrap()
+                let (srtt,rttvar) = if p.rtt.as_millis() == 333 {(0,0)} else {(p.rtt.as_millis(), p.rttvar.as_millis())};                
             }); 
 
             //info!("cap {:?} {:?} {:?}", client.conn.tx_cap, client.conn.tx_data, client.conn.max_tx_data);
-            conn_stats_wrt.serialize( ConnStatsRecord {
-                elapsed: server_start.elapsed().as_millis(),
-                trace_id: client.conn.trace_id(),
-                max_send_burst: max_send_burst,
-                sent_bytes: total_write,
-                tx_cap: tx_cap,
-                max_off: max_off,
-                off_back: off_back,
-                max_tx_data: client.conn.max_tx_data,
-                sent_bytes_total: client.conn.stats().sent_bytes,
-                lost_bytes_total: client.conn.stats().lost_bytes,
-                retrans_bytes_total: client.conn.stats().stream_retrans_bytes,
-                stream_written: client.partial_responses.iter().map(|(_, r)| r.written).sum(),
-                pending: client.partial_responses.iter().map(|(_, r)| r.body.len() - r.written).sum(),
-            }).unwrap();
-
-
-
 
             if client.conn.is_closed() {
                     println!(
