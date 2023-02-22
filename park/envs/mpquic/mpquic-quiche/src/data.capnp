@@ -3,6 +3,8 @@
 struct Data{
     bestRtt @0: UInt64;
     secondRtt @1: UInt64;
+    bestAcked @2: UInt64;
+    secondAcked @3: UInt64;
 }
 
 interface Scheduler{

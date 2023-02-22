@@ -32,16 +32,28 @@ class SchedulerImpl(mpquic_capnp.Scheduler.Server):
     def __init__(self, agent):
         self.rtts = []
         self.agent = agent
+        self.prevRtts = (0,0)
+        self.prevAcked = (0,0)
+        self.A = 1
+        self.B = 1
 
     def reward(self, obs):
         # TODO: define reward and info
-        return (0.0, None)
+        bestNewAcked = obs[2] - self.prevAcked[0]
+        secondNewAcked = obs[3] - self.prevAcked[1]
+        self.prevAcked = (obs[2],obs[3])
+        bestDeltaRtt = obs[0] - self.prevRtts[0]
+        secondDeltaRtt = obs[1] - self.prevRtts[1]
+
+        reward = self.A*(bestNewAcked+secondNewAcked) - self.B*(bestDeltaRtt-secondDeltaRtt)
+
+        return (reward, None)
 
     def nextPath(self, d, _context, **kwargs):
         #logger.info("d.best_rtt = {} d.second_rtt = {}".format(d.bestRtt, d.secondRtt))
         self.rtts.append((d.bestRtt, d.secondRtt))
 
-        obs = [ d.bestRtt, d.secondRtt]
+        obs = [d.bestRtt, d.secondRtt, d.bestAcked, d.secondAcked]
         reward, info = self.reward(obs)
 
         act = self.agent.get_action(obs, reward, False, info)
@@ -192,9 +204,11 @@ class MultipathQuicEnv(core.SysEnv):
         # state_space
         # bestRtt  : 0-1000000 (ms)
         # secondRtt: 0-1000000 (ms)
+        # bestAcked: 0-100000000 (bytes) TO DETERMINE
+        # secondAcked: 0-100000000 (bytes) TO DETERMINE
         self.observation_space = Box(
-            low=np.array([0] * 2),
-            high=np.array([1e6, 1e6]),
+            low=np.array([0] * 4),
+            high=np.array([1e6, 1e6, 100e6, 100e6]),
             dtype="float32"
         )
 

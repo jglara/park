@@ -124,6 +124,8 @@ impl Scheduler for RLScheduler{
         let data = Data{
             best_rtt: best_path.rtt.as_millis() as usize,
             second_rtt: second_path.rtt.as_millis() as usize,
+            best_acked: best_path.sent_bytes as usize - best_path.bytes_in_flight as usize,
+            second_acked: second_path.sent_bytes as usize - second_path.bytes_in_flight as usize,
         };
         self.tx.blocking_send(data).ok()?;
         if let Some(resp) = self.rx.blocking_recv(){
@@ -146,6 +148,8 @@ impl Scheduler for RLScheduler{
 struct Data{
     best_rtt: usize,
     second_rtt: usize,
+    best_acked: usize,
+    second_acked: usize,
 }
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
@@ -262,6 +266,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let mut d = msg.init_root::<data::Builder>();
                     d.set_best_rtt(recv_data.best_rtt.try_into().unwrap());
                     d.set_second_rtt(recv_data.second_rtt.try_into().unwrap());
+                    d.set_best_acked(recv_data.best_acked.try_into().unwrap());
+                    d.set_second_acked(recv_data.second_acked.try_into().unwrap());
 
                    request.get().set_d(d.into_reader()).unwrap();
                 
