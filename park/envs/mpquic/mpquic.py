@@ -30,33 +30,36 @@ mpquic_capnp = capnp.load(park.__path__[0] + "/envs/mpquic/mpquic-quiche/src/dat
 
 class SchedulerImpl(mpquic_capnp.Scheduler.Server):
     def __init__(self, agent):
-        self.rtts = []
+        # self.rtts = []
         self.agent = agent
-        self.prevRtts = (0,0)
+        # self.prevRtts = (0,0)
         self.prevAcked = (0,0)
+        self.prevObs = [0,0,0,0]
         self.A = 1
         self.B = 1
 
     def reward(self, obs):
         # TODO: define reward and info
-        bestNewAcked = obs[2] - self.prevAcked[0]
-        secondNewAcked = obs[3] - self.prevAcked[1]
-        self.prevAcked = (obs[2],obs[3])
-        bestDeltaRtt = obs[0] - self.prevRtts[0]
-        secondDeltaRtt = obs[1] - self.prevRtts[1]
+        bestDeltaRtt = obs[0] - self.prevObs[0]
+        secondDeltaRtt = obs[1] - self.prevObs[1]
+        bestDeltaAcked = obs [2] - self.prevObs[2]
+        secondDeltaAcked = obs [3] - self.prevObs[3]
 
-        reward = self.A*(bestNewAcked+secondNewAcked) - self.B*(bestDeltaRtt-secondDeltaRtt)
+        reward = self.A*(bestDeltaAcked+secondDeltaAcked) - self.B*np.log(max(bestDeltaRtt-secondDeltaRtt,0.00001))
 
         return (reward, None)
 
     def nextPath(self, d, _context, **kwargs):
         #logger.info("d.best_rtt = {} d.second_rtt = {}".format(d.bestRtt, d.secondRtt))
-        self.rtts.append((d.bestRtt, d.secondRtt))
-
-        obs = [d.bestRtt, d.secondRtt, d.bestAcked, d.secondAcked]
+        #self.rtts.append((d.bestRtt, d.secondRtt))
+        bestNewAcked = d.bestAcked - self.prevAcked[0]
+        secondNewAcked = d.secondAcked - self.prevAcked[1]
+        self.prevAcked = (d.bestAcked,d.secondAcked)
+        obs = [d.bestRtt, d.secondRtt, bestNewAcked, secondNewAcked]
         reward, info = self.reward(obs)
 
         act = self.agent.get_action(obs, reward, False, info)
+        self.prevObs = obs.copy()
         return act
 
 def run_forever(addr, agent):    
@@ -216,8 +219,9 @@ class MultipathQuicEnv(core.SysEnv):
         # Actions: 
         #   0 send only best path
         #   1 send only second path
-        
-        self.action_space = Discrete(2) 
+        #   2 wait without sending
+
+        self.action_space = Discrete(3) 
 
         self.output_dir = park.__path__[0] + "/../test_mpquic"
         self.topo_params = {
