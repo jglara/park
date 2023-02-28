@@ -45,7 +45,7 @@ class SchedulerImpl(mpquic_capnp.Scheduler.Server):
         bestDeltaAcked = obs [2] - self.prevObs[2]
         secondDeltaAcked = obs [3] - self.prevObs[3]
 
-        reward = self.A*(bestDeltaAcked+secondDeltaAcked) - self.B*np.log(max(bestDeltaRtt-secondDeltaRtt,0.00001))
+        reward = self.A*(bestDeltaAcked+secondDeltaAcked) - self.B*np.log(max(bestDeltaRtt+secondDeltaRtt,0.00001))
 
         return (reward, None)
 
