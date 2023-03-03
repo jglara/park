@@ -111,6 +111,9 @@ impl Scheduler for MinRttScheduler {
 struct RLScheduler{
     tx: mpsc::Sender<Data>,
     rx: mpsc::Receiver<u8>,
+    prev_best_acked: usize,
+    prev_second_acked: usize,
+    
 }
 impl Scheduler for RLScheduler{
     fn start(&mut self, conn: &quiche::Connection){
@@ -120,13 +123,15 @@ impl Scheduler for RLScheduler{
     fn next_path(&mut self, conn: &quiche::Connection) -> Option<(std::net::SocketAddr, std::net::SocketAddr)> {
         let best_path = conn.path_stats().filter(|p| p.active).min_by(|p1, p2| p1.rtt.cmp(&p2.rtt) ).unwrap();
         let second_path = conn.path_stats().filter(|p| p.active).max_by(|p1, p2| p1.rtt.cmp(&p2.rtt) ).unwrap();
-            
+
         let data = Data{
             best_rtt: best_path.rtt.as_millis() as usize,
             second_rtt: second_path.rtt.as_millis() as usize,
-            best_acked: best_path.sent_bytes as usize - best_path.bytes_in_flight as usize,
-            second_acked: second_path.sent_bytes as usize - second_path.bytes_in_flight as usize,
+            best_acked: ((best_path.sent_bytes as usize - best_path.bytes_in_flight as usize) - self.prev_best_acked),
+            second_acked: ((second_path.sent_bytes as usize - second_path.bytes_in_flight as usize) - self.prev_second_acked),
         };
+        self.prev_best_acked = best_path.sent_bytes as usize - best_path.bytes_in_flight as usize;
+        self.prev_second_acked = second_path.sent_bytes as usize - second_path.bytes_in_flight as usize;
         self.tx.blocking_send(data).ok()?;
         if let Some(resp) = self.rx.blocking_recv(){
             if resp == 0{
@@ -225,6 +230,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "minRtt" => Box::new(MinRttScheduler {}),
         "rl" => Box::new(RLScheduler {rx: rx_m,
                                       tx: tx_m,
+                                      prev_best_acked: 0,
+                                      prev_second_acked: 0,
         }),
         _ => panic!("Invalid scheduler")
     };

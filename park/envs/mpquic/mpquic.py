@@ -20,7 +20,7 @@ from mininet.link import TCIntf
 from mininet.log import setLogLevel, info, debug
 from mininet.clean import cleanup
 import threading
-
+import time
 
 
 
@@ -32,34 +32,37 @@ class SchedulerImpl(mpquic_capnp.Scheduler.Server):
     def __init__(self, agent):
         # self.rtts = []
         self.agent = agent
-        # self.prevRtts = (0,0)
-        self.prevAcked = (0,0)
         self.prevObs = [0,0,0,0]
         self.A = 1
         self.B = 1
+        self.prevTime = time.time()
 
     def reward(self, obs):
         # TODO: define reward and info
         bestDeltaRtt = obs[0] - self.prevObs[0]
         secondDeltaRtt = obs[1] - self.prevObs[1]
-        bestDeltaAcked = obs [2] - self.prevObs[2]
-        secondDeltaAcked = obs [3] - self.prevObs[3]
 
-        reward = self.A*(bestDeltaAcked+secondDeltaAcked) - self.B*np.log(max(bestDeltaRtt+secondDeltaRtt,0.00001))
+        reward = self.A*(obs[2]+obs[3]) - self.B*np.log(max(bestDeltaRtt+secondDeltaRtt,0.00001))
 
         return (reward, None)
 
     def nextPath(self, d, _context, **kwargs):
         #logger.info("d.best_rtt = {} d.second_rtt = {}".format(d.bestRtt, d.secondRtt))
         #self.rtts.append((d.bestRtt, d.secondRtt))
-        bestNewAcked = d.bestAcked - self.prevAcked[0]
-        secondNewAcked = d.secondAcked - self.prevAcked[1]
-        self.prevAcked = (d.bestAcked,d.secondAcked)
-        obs = [d.bestRtt, d.secondRtt, bestNewAcked, secondNewAcked]
-        reward, info = self.reward(obs)
+        
+        newTime = time.time()
+        elapsed = (newTime - self.prevTime)*1000
+        bestThrough = d.bestAcked / elapsed
+        secondThrough = d.secondAcked / elapsed
 
+        obs = [d.bestRtt, d.secondRtt, bestThrough, secondThrough]
+        
+        reward, info = self.reward(obs)
         act = self.agent.get_action(obs, reward, False, info)
+        
         self.prevObs = obs.copy()
+        self.prevTime = newTime
+        
         return act
 
 def run_forever(addr, agent):    
@@ -207,11 +210,11 @@ class MultipathQuicEnv(core.SysEnv):
         # state_space
         # bestRtt  : 0-1000000 (ms)
         # secondRtt: 0-1000000 (ms)
-        # bestAcked: 0-100000000 (bytes) TO DETERMINE
-        # secondAcked: 0-100000000 (bytes) TO DETERMINE
+        # bestThrough: 0-1000000 (kbytes/s) TO DETERMINE
+        # secondThrough: 0-1000000 (kbytes/s) TO DETERMINE
         self.observation_space = Box(
             low=np.array([0] * 4),
-            high=np.array([1e6, 1e6, 100e6, 100e6]),
+            high=np.array([1e6, 1e6, 1e6, 1e6]),
             dtype="float32"
         )
 
