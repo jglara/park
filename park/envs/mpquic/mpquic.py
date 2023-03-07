@@ -224,7 +224,7 @@ class MultipathQuicEnv(core.SysEnv):
         #   1 send only second path
         #   2 wait without sending
 
-        self.action_space = Discrete(3) 
+        self.action_space = Discrete(2) 
 
         self.output_dir = park.__path__[0] + "/../test_mpquic"
         self.topo_params = {
