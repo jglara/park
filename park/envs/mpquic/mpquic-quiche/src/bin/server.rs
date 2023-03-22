@@ -68,6 +68,8 @@ trait Scheduler {
         &mut self,
         conn: &quiche::Connection,
     ) -> Option<(std::net::SocketAddr, std::net::SocketAddr)>;
+
+    fn reset(&mut self);
 }
 
 struct RoundRobinScheduler {
@@ -93,6 +95,8 @@ impl Scheduler for RoundRobinScheduler {
             .nth(self.next)
             .map(|p| (p.local_addr, p.peer_addr))
     }
+
+    fn reset(&mut self){}
 }
 
 struct MinRttScheduler {}
@@ -114,6 +118,7 @@ impl Scheduler for MinRttScheduler {
                 .map(|p| (p.local_addr, p.peer_addr))
         }
     }
+    fn reset (&mut self){}
 }
 
 struct RLScheduler {
@@ -124,7 +129,7 @@ struct RLScheduler {
 }
 impl Scheduler for RLScheduler {
     fn start(&mut self, conn: &quiche::Connection) {}
-
+    
     fn next_path(
         &mut self,
         conn: &quiche::Connection,
@@ -165,7 +170,14 @@ impl Scheduler for RLScheduler {
             None
         }
     }
+
+    fn reset(&mut self) {
+        self.prev_best_acked = 0;
+        self.prev_second_acked = 0;
+    }
 }
+
+
 
 struct Data {
     best_rtt: usize,
@@ -660,6 +672,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     c.conn.stats(),
                     c.conn.path_stats().collect::<Vec<quiche::PathStats>>()
                 );
+               sched.reset();
+               
             }
 
             !c.conn.is_closed()
