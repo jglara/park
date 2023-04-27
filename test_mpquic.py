@@ -135,6 +135,7 @@ class RandomAgent(object):
             self.q_target.load_state_dict(self.q.state_dict())
             park.logger.info("score : {:.1f}, n_buffer : {}, eps : {:.1f}%".format(
                                                             self.score/(self.learning_cycle*self.update_cycle), self.memory.size(), self.epsilon*100))
+            self.score = 0
         return self.act
 
 
