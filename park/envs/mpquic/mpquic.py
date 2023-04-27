@@ -49,9 +49,8 @@ class SchedulerImpl(mpquic_capnp.Scheduler.Server):
         return (reward, None)
 
     def nextPath(self, d, _context, **kwargs):
-        logger.info("d.best_rtt = {} d.second_rtt = {}".format(
-            d.bestRtt, d.secondRtt))
-        #self.rtts.append((d.bestRtt, d.secondRtt))
+        # logger.info("d.best_rtt = {} d.second_rtt = {}".format(d.bestRtt, d.secondRtt))
+        # self.rtts.append((d.bestRtt, d.secondRtt))
 
         newTime = time.time()
         elapsed = (newTime - self.prevTime)*1000
@@ -148,7 +147,7 @@ class MultipathTopo(Topo):
 
         linkConfig_lte = opts[self.LTE]
         linkConfig_wifi = opts[self.WIFI]
-        #linkConfig_server = {'bw': 50, 'delay': '5ms', 'loss': 0, 'jitter': 0, 'max_queue_size': 10000 }
+        # linkConfig_server = {'bw': 50, 'delay': '5ms', 'loss': 0, 'jitter': 0, 'max_queue_size': 10000 }
 # , 'txo': False, 'rxo': False
 
         # server router connections
@@ -171,14 +170,12 @@ class MultipathTopo(Topo):
 
 class QuicheQuic:
     NAME = "quichequic"
-    QUICHEPATH = park.__path__[0] + "/envs/mpquic/mpquic-quiche"
+    QUICHEPATH = park.__path__[0] + "/envs/mpquic/mpquic-quiche"    
 
     def __init__(self, net, file_size, output_dir):
         self.file_path = "test.bin"
-        self.file_size = file_size
-        self.output_dir = output_dir
+        self.file_size = file_size        
         self.net = net
-        self.loglevel = 'info'
 
     def prepare(self):
         self.net.getNodeByName('s1').cmd("truncate -s {size} {path}".format(
@@ -189,22 +186,21 @@ class QuicheQuic:
 
     def get_server_cmd(self):
         # QLOGDIR={csv_path}
-        cmd = "RUST_LOG={loglevel} {quichepath}/target/debug/mp_server --listen 10.0.3.10:4433 --cert {quichepath}/src/bin/cert.crt --key {quichepath}/src/bin/cert.key --root {wwwpath} --scheduler rl > {output}/server.log&".format(
-            output=self.output_dir,
+        cmd = "{quichepath}/target/debug/mp_server --listen 10.0.3.10:4433 --cert {quichepath}/src/bin/cert.crt --key {quichepath}/src/bin/cert.key --root {wwwpath} --scheduler rl --logging-config {log}&".format(            
             quichepath=self.QUICHEPATH,
             wwwpath='./',
-            loglevel=self.loglevel)
+            log = park.__path__[0] + "/../server_log.yaml"
+            )
 
         logger.info(cmd)
         return cmd
 
     def get_client_cmd(self):
 
-        cmd = "RUST_LOG={loglevel} {quichepath}/target/debug/mp_client -l 10.0.1.1:5555 -w 10.0.2.1:6666 --url https://10.0.3.10:4433/{file} > {output}/client.log".format(
-            output=self.output_dir,
+        cmd = "{quichepath}/target/debug/mp_client -l 10.0.1.1:5555 -w 10.0.2.1:6666 --url https://10.0.3.10:4433/{file} --logging-config {log}".format(            
             quichepath=self.QUICHEPATH,
             file=self.file_path,
-            loglevel=self.loglevel
+            log = park.__path__[0] + "/../client_log.yaml"
         )
 
         logger.info(cmd)

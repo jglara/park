@@ -6,7 +6,8 @@ use clap::Parser;
 use ring::rand::*;
 use std::net::ToSocketAddrs;
 use std::collections::HashMap;
-use std::net::SocketAddr;
+
+use log4rs;
 
 
 #[derive(Parser)]
@@ -23,6 +24,9 @@ struct ClientCli {
 
     #[clap(value_parser, long, short)]
     max_stream_data: Option<u64>, // Initial max stream data
+
+    #[clap(value_parser, long)]
+    logging_config: String, // log4rs logging config
    
 }
 
@@ -34,8 +38,10 @@ const HTTP_REQ_STREAM_ID: u64 = 4;
 
 fn main() {
 
-    env_logger::init();
+    
     let cli = ClientCli::parse();
+
+    log4rs::init_file(cli.logging_config, Default::default()).unwrap();
 
     let mut buf = [0; 65535];
     let mut out = [0; MAX_DATAGRAM_SIZE];
@@ -249,7 +255,7 @@ fn main() {
         debug!("done reading");
 
         if conn.is_closed() {
-            println!("connection closed, {:?}", conn.stats());
+            info!("connection closed, {:?}", conn.stats());
             break;
         }
 
@@ -286,7 +292,7 @@ fn main() {
                 // The server reported that it has no more data to send, which
                 // we got the full response. Close the connection.
                 if s == HTTP_REQ_STREAM_ID && fin {
-                    println!(
+                    info!(
                         "{:?} bytes received in {:?}, closing...", conn.stats().recv_bytes,
                         req_start.elapsed()
                     );
@@ -365,7 +371,7 @@ fn main() {
         }
 
         if conn.is_closed() {
-            println!("connection closed, {:?}", conn.stats());
+            info!("connection closed, {:?}", conn.stats());
             break;
         }
     }

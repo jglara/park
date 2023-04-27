@@ -25,7 +25,7 @@ capnpc = "0.15"
 
 [dependencies]
 clap = { version="3.2", features = ["derive"]}
-env_logger = "0.6"
+log4rs = "1"
 log = "0.4"
 mio = { version = "0.8", features = ["net", "os-poll"] }
 quiche = { path = "../quiche/quiche" }

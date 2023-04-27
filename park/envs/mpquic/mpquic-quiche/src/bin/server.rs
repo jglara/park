@@ -1,5 +1,6 @@
 #[macro_use]
 extern crate log;
+use log4rs;
 
 pub mod data_capnp {
     include!(concat!(env!("OUT_DIR"), "/data_capnp.rs"));
@@ -40,6 +41,9 @@ struct ServerCli {
 
     #[clap(value_parser, long, short)]
     scheduler: String, // Type of scheduler
+
+    #[clap(value_parser, long)]
+    logging_config: String, // log4rs logging config
 }
 
 const MAX_BUF_SIZE: usize = 65507;
@@ -126,9 +130,20 @@ struct RLScheduler {
     rx: mpsc::Receiver<u8>,
     prev_best_acked: usize,
     prev_second_acked: usize,
+    
+}
+
+impl RLScheduler {
+    fn calc_last_acked(&self, path_stats: &PathStats, last_total_acked: usize) -> usize 
+    {
+        let total_acked= if path_stats.sent_bytes as usize > path_stats.bytes_in_flight  {path_stats.sent_bytes as usize - path_stats.bytes_in_flight } else {0};
+        if total_acked > last_total_acked {total_acked - last_total_acked} else {0}
+    }
 }
 impl Scheduler for RLScheduler {
-    fn start(&mut self, conn: &quiche::Connection) {}
+
+
+    fn start(&mut self, _conn: &quiche::Connection) {}
     
     fn next_path(
         &mut self,
@@ -148,11 +163,8 @@ impl Scheduler for RLScheduler {
         let data = Data {
             best_rtt: best_path.rtt.as_millis() as usize,
             second_rtt: second_path.rtt.as_millis() as usize,
-            best_acked: ((best_path.sent_bytes as usize - best_path.bytes_in_flight as usize)
-                - self.prev_best_acked),
-            second_acked: ((second_path.sent_bytes as usize
-                - second_path.bytes_in_flight as usize)
-                - self.prev_second_acked),
+            best_acked: self.calc_last_acked(&best_path, self.prev_best_acked) ,
+            second_acked: self.calc_last_acked(&second_path, self.prev_second_acked) ,
         };
         self.prev_best_acked = best_path.sent_bytes as usize - best_path.bytes_in_flight as usize;
         self.prev_second_acked =
@@ -185,9 +197,10 @@ struct Data {
     best_acked: usize,
     second_acked: usize,
 }
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    env_logger::init();
+fn main() -> Result<(), Box<dyn std::error::Error>> {    
     let cli = ServerCli::parse();
+
+    log4rs::init_file(cli.logging_config, Default::default()).unwrap();
 
     info!(
         "starting up server in {:?} with cert {} and key {}",
@@ -324,7 +337,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             false => clients.values().filter_map(|c| c.conn.timeout()).min(),
         };
 
-        poll.poll(&mut events, timeout).unwrap();
+        let _res = poll.poll(&mut events, timeout);
 
         // Read incoming UDP packets from the socket and feed them to quiche,
         // until there are no more packets to read.
@@ -666,12 +679,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             trace!("Collecting garbage");
 
             if c.conn.is_closed() {
-                info!(
+           /*     info!(
                     "{} connection collected {:?} {:?}",
                     c.conn.trace_id(),
                     c.conn.stats(),
                     c.conn.path_stats().collect::<Vec<quiche::PathStats>>()
-                );
+                );*/
                sched.reset();
                
             }
