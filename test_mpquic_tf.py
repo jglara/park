@@ -97,13 +97,9 @@ class RLAgent(object):
         self.observers = self.train_metrics
         
         self.last_time_step = restart(tf.zeros((1,4), dtype=state_space.dtype), batch_size=1)
-        self.last_action_step = self.agent.collect_policy.action(self.last_time_step)
-        self.action_count = 0
+        self.last_action_step = self.agent.collect_policy.action(self.last_time_step)        
 
     def get_action(self, obs, reward, done, prev_info):
-        self.action_count += 1
-        if self.action_count % 10 != 0:
-            return self.last_action_step.action.numpy()[0].item()
 
         if done:
             next_time_step = termination(observation=tf.convert_to_tensor([obs], dtype=self.state_space.dtype), reward=tf.convert_to_tensor([reward], dtype=np.float32))
@@ -113,31 +109,32 @@ class RLAgent(object):
         traj = from_transition(self.last_time_step, self.last_action_step, next_time_step)        
 
         self.buffer.add_batch(traj)
-        #import pdb; pdb.set_trace()
         for o in self.observers:
             o(traj)
-    
-        
-        self.last_action_step = self.agent.collect_policy.action(next_time_step)        
-        self.last_time_step = next_time_step
-        return self.last_action_step.action.numpy()[0].item()
-    
-    def reset(self):
-        # Fake last transition
-        self.get_action([0.0] *4, 0.0, True, None)        
 
-        self.last_time_step = restart(tf.zeros((1,4), dtype=self.state_space.dtype), batch_size=1)
-        self.last_action_step = self.agent.collect_policy.action(self.last_time_step)
-        
-    def train_one_iteration(self):
-        batch, _ = next(self.iterator)
-        train_loss = self.agent.train(batch)
-        iteration = self.agent.train_step_counter.numpy()
+        actions_histogram = self.train_metrics[3].result()
+        # import pdb; pdb.set_trace()
+        #actions = {i:actions_histogram.count(i) for i in actions_histogram}
+        logger.info(f" episode: {self.train_metrics[0].result()} steps: {self.train_metrics[1].result()} avg return: {self.train_metrics[2].result()}")
 
         for m in self.train_metrics:
             m.tf_summaries(train_step = self.agent.train_step_counter)
 
-        #printf(f" iteration: {iteration} loss: {train_loss.loss}"")
+        
+        self.last_action_step = self.agent.collect_policy.action(next_time_step)        
+        self.last_time_step = next_time_step
+        return self.last_action_step.action.numpy()[0].item()
+            
+    def train_one_iteration(self):
+        batch, _ = next(self.iterator)
+        train_loss = self.agent.train(batch)
+        iteration = self.agent.train_step_counter.numpy()
+        episode = self.train_metrics[0].result()
+
+        for m in self.train_metrics:
+            m.tf_summaries(train_step = self.agent.train_step_counter)
+
+        logger.info(f" episode: {episode} steps: {self.train_metrics[1].result()} training iteration: {iteration} loss: {train_loss.loss}")
         return iteration, train_loss.loss
         
 
@@ -147,14 +144,12 @@ def main():
     env.run(agent)
 
     # gather enough experiences before training starts
-    for _ in range(32):
-        agent.reset()
+    for _ in range(2):        
         env.reset()
         #print(f"Buffer: {agent.buffer.num_frames()}")
 
     #start training loops after each download / episode
-    for _ in range(10):
-        agent.reset()
+    for _ in range(5):
         env.reset()
         agent.train_one_iteration()
 

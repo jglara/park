@@ -73,7 +73,7 @@ trait Scheduler {
         conn: &quiche::Connection,
     ) -> Option<(std::net::SocketAddr, std::net::SocketAddr)>;
 
-    fn reset(&mut self);
+    fn reset(&mut self, conn: &quiche::Connection);
 }
 
 struct RoundRobinScheduler {
@@ -100,7 +100,7 @@ impl Scheduler for RoundRobinScheduler {
             .map(|p| (p.local_addr, p.peer_addr))
     }
 
-    fn reset(&mut self){}
+    fn reset(&mut self, conn: &quiche::Connection){}
 }
 
 struct MinRttScheduler {}
@@ -122,7 +122,7 @@ impl Scheduler for MinRttScheduler {
                 .map(|p| (p.local_addr, p.peer_addr))
         }
     }
-    fn reset (&mut self){}
+    fn reset (&mut self, conn: &quiche::Connection){}
 }
 
 struct RLScheduler {
@@ -130,6 +130,7 @@ struct RLScheduler {
     rx: mpsc::Receiver<u8>,
     prev_best_acked: usize,
     prev_second_acked: usize,
+    path: Option<(std::net::SocketAddr, std::net::SocketAddr)>,
     
 }
 
@@ -143,12 +144,7 @@ impl RLScheduler {
 impl Scheduler for RLScheduler {
 
 
-    fn start(&mut self, _conn: &quiche::Connection) {}
-    
-    fn next_path(
-        &mut self,
-        conn: &quiche::Connection,
-    ) -> Option<(std::net::SocketAddr, std::net::SocketAddr)> {
+    fn start(&mut self, conn: &quiche::Connection) {
         let best_path = conn
             .path_stats()
             .filter(|p| p.active)
@@ -165,12 +161,14 @@ impl Scheduler for RLScheduler {
             second_rtt: second_path.rtt.as_millis() as usize,
             best_acked: self.calc_last_acked(&best_path, self.prev_best_acked) ,
             second_acked: self.calc_last_acked(&second_path, self.prev_second_acked) ,
+            done: false,
         };
         self.prev_best_acked = best_path.sent_bytes as usize - best_path.bytes_in_flight as usize;
         self.prev_second_acked =
             second_path.sent_bytes as usize - second_path.bytes_in_flight as usize;
-        self.tx.blocking_send(data).ok()?;
-        if let Some(resp) = self.rx.blocking_recv() {
+        self.tx.blocking_send(data).ok().unwrap();
+
+        self.path = if let Some(resp) = self.rx.blocking_recv() {
             if resp == 0 {
                 Some((best_path.local_addr, best_path.peer_addr))
             } else if resp == 1 {
@@ -181,12 +179,48 @@ impl Scheduler for RLScheduler {
         } else {
             None
         }
+
+    }
+    
+    fn next_path(
+        &mut self,
+        _conn: &quiche::Connection,
+    ) -> Option<(std::net::SocketAddr, std::net::SocketAddr)> {
+        self.path.clone()
     }
 
-    fn reset(&mut self) {
+    fn reset(&mut self, conn: &quiche::Connection) {
+        let best_path = conn
+            .path_stats()
+            .filter(|p| p.active)
+            .min_by(|p1, p2| p1.rtt.cmp(&p2.rtt))
+            .unwrap();
+
+        let second_path = conn
+            .path_stats()
+            .filter(|p| p.active)
+            .max_by(|p1, p2| p1.rtt.cmp(&p2.rtt))
+            .unwrap();
+
+        let data = Data {
+            best_rtt: best_path.rtt.as_millis() as usize,
+            second_rtt: second_path.rtt.as_millis() as usize,
+            best_acked: self.calc_last_acked(&best_path, self.prev_best_acked) ,
+            second_acked: self.calc_last_acked(&second_path, self.prev_second_acked) ,
+            done: true,
+        };
+
+        self.prev_best_acked = best_path.sent_bytes as usize - best_path.bytes_in_flight as usize;
+        self.prev_second_acked =
+            second_path.sent_bytes as usize - second_path.bytes_in_flight as usize;
+        self.tx.blocking_send(data).ok().unwrap();
+        self.rx.blocking_recv(); // ignore the response
+
         self.prev_best_acked = 0;
         self.prev_second_acked = 0;
+
     }
+
 }
 
 
@@ -196,6 +230,7 @@ struct Data {
     second_rtt: usize,
     best_acked: usize,
     second_acked: usize,
+    done: bool,
 }
 fn main() -> Result<(), Box<dyn std::error::Error>> {    
     let cli = ServerCli::parse();
@@ -268,6 +303,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             tx: tx_m,
             prev_best_acked: 0,
             prev_second_acked: 0,
+            path: None,
         }),
         _ => panic!("Invalid scheduler"),
     };
@@ -317,6 +353,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             d.set_second_rtt(recv_data.second_rtt.try_into().unwrap());
                             d.set_best_acked(recv_data.best_acked.try_into().unwrap());
                             d.set_second_acked(recv_data.second_acked.try_into().unwrap());
+                            d.set_done(recv_data.done);
 
                             request.get().set_d(d.into_reader()).unwrap();
 
@@ -685,7 +722,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     c.conn.stats(),
                     c.conn.path_stats().collect::<Vec<quiche::PathStats>>()
                 );*/
-               sched.reset();
+               sched.reset(&c.conn);
                
             }
 

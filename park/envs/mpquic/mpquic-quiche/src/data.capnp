@@ -5,6 +5,7 @@ struct Data{
     secondRtt @1: UInt64;
     bestAcked @2: UInt64;
     secondAcked @3: UInt64;
+    done @4: Bool;
 }
 
 interface Scheduler{
