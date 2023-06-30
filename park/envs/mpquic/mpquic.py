@@ -1,4 +1,5 @@
 import park
+import traceback
 from park import core, spaces, logger
 from park.param import config
 from park.utils import seeding
@@ -30,7 +31,7 @@ mpquic_capnp = capnp.load(
 
 
 class SchedulerImpl(mpquic_capnp.Scheduler.Server):
-    def __init__(self, agent):
+    def __init__(self, total_download, agent):
         # self.rtts = []
         self.agent = agent
         self.prevObs = [0, 0, 0, 0]
@@ -39,7 +40,6 @@ class SchedulerImpl(mpquic_capnp.Scheduler.Server):
         self.prevTime = time.time()
 
     def reward(self, obs):
-        # TODO: define reward and info
         bestDeltaRtt = obs[0] - self.prevObs[0]
         secondDeltaRtt = obs[1] - self.prevObs[1]
 
@@ -48,9 +48,10 @@ class SchedulerImpl(mpquic_capnp.Scheduler.Server):
 
         return (reward, None)
 
-    def nextPath(self, d, _context, **kwargs):
-        # logger.info("d.best_rtt = {} d.second_rtt = {}".format(d.bestRtt, d.secondRtt))
+    def nextPath(self, d, _context, **kwargs):        
         # self.rtts.append((d.bestRtt, d.secondRtt))
+
+        #logger.info("best_acked= {} second_acked= {} d.best_rtt = {} d.second_rtt = {} done = {}".format(d.bestAcked, d.secondAcked, d.bestRtt, d.secondRtt, d.done))        
 
         newTime = time.time()
         elapsed = (newTime - self.prevTime)*1000
@@ -60,7 +61,7 @@ class SchedulerImpl(mpquic_capnp.Scheduler.Server):
         obs = [d.bestRtt, d.secondRtt, bestThrough, secondThrough]
 
         reward, info = self.reward(obs)
-        act = self.agent.get_action(obs, reward, False, info)
+        act = self.agent.get_action(obs, reward, d.done, info)        
 
         self.prevObs = obs.copy()
         self.prevTime = newTime
@@ -69,9 +70,13 @@ class SchedulerImpl(mpquic_capnp.Scheduler.Server):
 
 
 def run_forever(addr, agent):
-    logger.info("Starting communication with MPQUIC server")
-    server = capnp.TwoPartyServer(addr, bootstrap=SchedulerImpl(agent))
-    server.run_forever()
+    try:
+        logger.info("Starting communication with MPQUIC server")
+        server = capnp.TwoPartyServer(addr, bootstrap=SchedulerImpl(1024 * 1024, agent))
+        server.run_forever()
+    except Exception as e:
+        print(f"A fatal error occurred: {e = }")
+        traceback.print_exc()
 
 
 class ProxyAgent(object):
@@ -82,8 +87,9 @@ class ProxyAgent(object):
         self.agent = agent
 
     def get_action(self, *args):
-        assert (self.agent != None)
-        return self.agent.get_action(*args)
+        assert (self.agent != None)    
+        action =  self.agent.get_action(*args)        
+        return action
 
 
 proxy_agent = ProxyAgent()
@@ -275,9 +281,10 @@ class MultipathQuicEnv(core.SysEnv):
         self.reset()
 
     def reset(self):
-
+        #global proxy_agent
         # run experiment
         logger.info("Start download")
+        
         self.exp.run()
         logger.info("download finished")
         # exp.clean()

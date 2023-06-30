@@ -112,15 +112,13 @@ class RLAgent(object):
         for o in self.observers:
             o(traj)
 
-        actions_histogram = self.train_metrics[3].result()
-        # import pdb; pdb.set_trace()
-        #actions = {i:actions_histogram.count(i) for i in actions_histogram}
-        logger.info(f" episode: {self.train_metrics[0].result()} steps: {self.train_metrics[1].result()} avg return: {self.train_metrics[2].result()}")
-
-        for m in self.train_metrics:
-            m.tf_summaries(train_step = self.agent.train_step_counter)
-
+        actions_histogram = self.train_metrics[3].result().numpy()                
+        actions = list(zip(*np.unique(actions_histogram, return_counts=True)))
+        #logger.info(f" {done = } episode: {self.train_metrics[0].result()} steps: {self.train_metrics[1].result()} avg return: {self.train_metrics[2].result()} actions: {actions}")
         
+        if done:
+            logger.info(f" episode: {self.train_metrics[0].result()} steps: {self.train_metrics[1].result()} avg return: {self.train_metrics[2].result()} actions: {actions}")
+            
         self.last_action_step = self.agent.collect_policy.action(next_time_step)        
         self.last_time_step = next_time_step
         return self.last_action_step.action.numpy()[0].item()
@@ -131,10 +129,10 @@ class RLAgent(object):
         iteration = self.agent.train_step_counter.numpy()
         episode = self.train_metrics[0].result()
 
-        for m in self.train_metrics:
-            m.tf_summaries(train_step = self.agent.train_step_counter)
-
         logger.info(f" episode: {episode} steps: {self.train_metrics[1].result()} training iteration: {iteration} loss: {train_loss.loss}")
+        for m in self.train_metrics:
+                m.tf_summaries(train_step = self.agent.train_step_counter)
+        
         return iteration, train_loss.loss
         
 
@@ -144,12 +142,12 @@ def main():
     env.run(agent)
 
     # gather enough experiences before training starts
-    for _ in range(2):        
+    for _ in range(5):        
         env.reset()
         #print(f"Buffer: {agent.buffer.num_frames()}")
 
     #start training loops after each download / episode
-    for _ in range(5):
+    for _ in range(20):
         env.reset()
         agent.train_one_iteration()
 
