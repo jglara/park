@@ -7,6 +7,7 @@ use ring::rand::*;
 use std::net::ToSocketAddrs;
 use std::collections::HashMap;
 
+
 use log4rs;
 
 
@@ -69,7 +70,7 @@ fn main() {
     let mut sockets = Vec::new();
 
     // for path probes
-    let mut probed_paths = 1;
+    let mut probed_paths = 1;    
 
     let mut tok=0;
     for src_addr in &addrs {
@@ -259,8 +260,10 @@ fn main() {
             break;
         }
 
+        //info!("Validated paths: {:?} / {:?}", conn.path_stats().count(), conn.path_stats().filter(|p| p.active ).count());
+
         // Send an HTTP request as soon as the connection is established.
-        if conn.is_established() && !req_sent  && conn.path_stats().count() >= 2 {
+        if conn.is_established() && !req_sent  && conn.path_stats().filter(|p| p.active ).count() >= 2 {            
             req_start = std::time::Instant::now();
             info!("sending HTTP request for {}", url.path());
 
@@ -397,7 +400,7 @@ fn handle_path_events(conn: &mut quiche::Connection)
                     local_addr, peer_addr
                 );
                 
-                conn.set_active(local_addr, peer_addr, true).ok();
+                conn.set_active(local_addr, peer_addr, true).ok();                
             },
             
             quiche::PathEvent::FailedValidation(local_addr, peer_addr) => {

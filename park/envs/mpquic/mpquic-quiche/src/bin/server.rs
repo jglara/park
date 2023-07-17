@@ -146,58 +146,70 @@ impl Scheduler for RLScheduler {
 
 
     fn start(&mut self, conn: &quiche::Connection) {
-        let best_path = conn
-            .path_stats()
-            .filter(|p| p.active)
-            .min_by(|p1, p2| p1.rtt.cmp(&p2.rtt))
-            .unwrap();
-        let second_path = conn
-            .path_stats()
-            .filter(|p| p.active)
-            .max_by(|p1, p2| p1.rtt.cmp(&p2.rtt))
-            .unwrap();
+        let path_count = conn.path_stats().filter(|p| p.active).count();
 
-        /*if conn.path_stats().count() > 0 {
-            info!("paths: {:?} first: {:?}", conn.path_stats().count(), conn.path_stats().nth(0).unwrap().peer_addr);
-        }
-
-        if conn.path_stats().count() > 1 {
-            info!("paths: {:?} second: {:?}", conn.path_stats().count(), conn.path_stats().nth(1).unwrap().peer_addr);
-        }
-        */
-
-
-        let data = Data {
-            best_rtt: best_path.rtt.as_millis() as usize,
-            second_rtt: second_path.rtt.as_millis() as usize,
-            best_acked: self.calc_last_acked(&best_path, self.prev_best_acked) ,
-            second_acked: self.calc_last_acked(&second_path, self.prev_second_acked) ,
-            done: false,
-        };
-        self.prev_best_acked = best_path.sent_bytes as usize - best_path.bytes_in_flight as usize;
-        self.prev_second_acked =
-            second_path.sent_bytes as usize - second_path.bytes_in_flight as usize;
-        self.tx.blocking_send(data).ok().unwrap();
-
-        self.path = if let Some(resp) = self.rx.blocking_recv() {
-            if resp == 0 {
-                Some((best_path.local_addr, best_path.peer_addr))
-            } else if resp == 1 {
-                Some((second_path.local_addr, second_path.peer_addr))
-            } else {
-                None
-            }
+        if path_count >= 2 {
+          let best_path = conn
+              .path_stats()
+              .filter(|p| p.active)
+              .min_by(|p1, p2| p1.rtt.cmp(&p2.rtt))
+              .unwrap();
+          let second_path = conn
+              .path_stats()
+              .filter(|p| p.active)
+              .max_by(|p1, p2| p1.rtt.cmp(&p2.rtt))
+              .unwrap();
+  
+          /*if conn.path_stats().count() > 0 {
+              info!("paths: {:?} first: {:?}", conn.path_stats().count(), conn.path_stats().nth(0).unwrap().peer_addr);
+          }
+  
+          if conn.path_stats().count() > 1 {
+              info!("paths: {:?} second: {:?}", conn.path_stats().count(), conn.path_stats().nth(1).unwrap().peer_addr);
+          }
+          */
+  
+  
+          let data = Data {
+              best_rtt: best_path.rtt.as_millis() as usize,
+              second_rtt: second_path.rtt.as_millis() as usize,
+              best_acked: self.calc_last_acked(&best_path, self.prev_best_acked) ,
+              second_acked: self.calc_last_acked(&second_path, self.prev_second_acked) ,
+              done: false,
+          };
+          self.prev_best_acked = best_path.sent_bytes as usize - best_path.bytes_in_flight as usize;
+          self.prev_second_acked =
+              second_path.sent_bytes as usize - second_path.bytes_in_flight as usize;
+          self.tx.blocking_send(data).ok().unwrap();
+  
+          self.path = if let Some(resp) = self.rx.blocking_recv() {
+              if resp == 0 {
+                  Some((best_path.local_addr, best_path.peer_addr))
+              } else if resp == 1 {
+                  Some((second_path.local_addr, second_path.peer_addr))
+              } else {
+                  None
+              }
+          } else {
+              None
+          }
         } else {
-            None
+            if let Some(path) = conn.path_stats().last() {
+                self.path = Some((path.local_addr, path.peer_addr));
+            }
         }
-
     }
-    
+
+        
     fn next_path(
         &mut self,
         _conn: &quiche::Connection,
     ) -> Option<(std::net::SocketAddr, std::net::SocketAddr)> {
-        self.path.clone()
+        if self.path.is_some() {
+            self.path.clone()
+        } else {
+            None
+        }
     }
 
     fn reset(&mut self, conn: &quiche::Connection) {
