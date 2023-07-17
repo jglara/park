@@ -157,7 +157,15 @@ impl Scheduler for RLScheduler {
             .max_by(|p1, p2| p1.rtt.cmp(&p2.rtt))
             .unwrap();
 
-        info!("best_path: {:?} second_path {:?}", best_path.peer_addr, second_path.peer_addr);
+        /*if conn.path_stats().count() > 0 {
+            info!("paths: {:?} first: {:?}", conn.path_stats().count(), conn.path_stats().nth(0).unwrap().peer_addr);
+        }
+
+        if conn.path_stats().count() > 1 {
+            info!("paths: {:?} second: {:?}", conn.path_stats().count(), conn.path_stats().nth(1).unwrap().peer_addr);
+        }
+        */
+
 
         let data = Data {
             best_rtt: best_path.rtt.as_millis() as usize,
