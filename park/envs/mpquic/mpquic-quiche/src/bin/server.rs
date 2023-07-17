@@ -54,6 +54,7 @@ struct PartialResponse {
     written: usize,
 }
 struct Client {
+    client_id: u64,
     conn: quiche::Connection,
     partial_responses: HashMap<u64, PartialResponse>,
     loss_rate: f64,
@@ -155,6 +156,8 @@ impl Scheduler for RLScheduler {
             .filter(|p| p.active)
             .max_by(|p1, p2| p1.rtt.cmp(&p2.rtt))
             .unwrap();
+
+        info!("best_path: {:?} second_path {:?}", best_path.peer_addr, second_path.peer_addr);
 
         let data = Data {
             best_rtt: best_path.rtt.as_millis() as usize,
@@ -430,7 +433,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 && !clients_ids.contains_key(&conn_id)
             {
                 if hdr.ty != quiche::Type::Initial {
-                    error!("Packet is not Initial");
+                    error!("Packet dcid:{:?} {:?} is not Initial", hdr.dcid, conn_id);
                     continue 'read;
                 }
 
@@ -528,6 +531,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 clients.insert(
                     client_id,
                     Client {
+                        client_id,
                         conn,
                         partial_responses: HashMap::new(),
                         loss_rate: 0.0,
@@ -537,6 +541,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 clients_ids.insert(scid.clone(), client_id);
                 next_client_id += 1;
+
+                info!("Adding client: id: {:?} -> cid: {:?} ", client_id, scid);
 
                 clients.get_mut(&client_id).unwrap()
             } else {
@@ -605,7 +611,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     break;
                 }
 
-                info!("Adding new source CID {:?}", scid);
+                info!("Adding new source CID {:?} to {:?}", scid, client.client_id);
+                clients_ids.insert(scid.clone(), client.client_id);
+
+
             }
         } //read loop
 
@@ -699,7 +708,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
-            //info!("Sending over paths: {:?}", scheduled_tuples);
             client.conn.path_stats().for_each(|p| {
                 let (srtt, rttvar) = if p.rtt.as_millis() == 333 {
                     (0, 0)

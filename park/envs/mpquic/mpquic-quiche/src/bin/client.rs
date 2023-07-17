@@ -73,7 +73,7 @@ fn main() {
 
     let mut tok=0;
     for src_addr in &addrs {
-        info!("registeging source address {:?}", src_addr);
+        info!("registering source address {:?}", src_addr);
         let socket = mio::net::UdpSocket::bind(src_addr.parse().unwrap()).unwrap();
         let local_addr = socket.local_addr().unwrap();
         src_addrs.insert(local_addr, tok);
